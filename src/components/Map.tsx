@@ -1,10 +1,16 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
-import mapboxgl from 'mapbox-gl'
-import 'mapbox-gl/dist/mapbox-gl.css'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
-mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''
+// Fix Leaflet's default icon path issues
+delete (L.Icon.Default.prototype as { _getIconUrl?: string })._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+})
 
 interface MapProps {
   onRouteUpdate?: (coordinates: number[][], stats: RouteStats) => void;
@@ -33,9 +39,11 @@ export default function Map({
   onSearchSelect 
 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<mapboxgl.Map | null>(null)
+  const map = useRef<L.Map | null>(null)
+  const routeLayer = useRef<L.Polyline | null>(null)
+  const markersLayer = useRef<L.LayerGroup | null>(null)
+
   const [coordinates, setCoordinates] = useState<Coordinate[]>([])
-  const markersRef = useRef<mapboxgl.Marker[]>([])
   const [mapLoaded, setMapLoaded] = useState(false)
   const [showAlignButton, setShowAlignButton] = useState(false)
   const [isAligning, setIsAligning] = useState(false)
@@ -54,8 +62,9 @@ export default function Map({
       setIsSearching(true)
       try {
         console.log('Searching for:', searchQuery)
+        // Using Nominatim for OpenStreetMap
         const response = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${mapboxgl.accessToken}&limit=5&types=place,locality,neighborhood,address`
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5`
         )
         if (!response.ok) {
           throw new Error('Search failed')
@@ -64,8 +73,12 @@ export default function Map({
         const data = await response.json()
         console.log('Search results:', data)
         
-        if (data.features && data.features.length > 0) {
-          setSearchResults(data.features)
+        if (data && data.length > 0) {
+          const formattedResults = data.map((item: { lon: string, lat: string, display_name: string }) => ({
+            center: [parseFloat(item.lon), parseFloat(item.lat)] as [number, number],
+            place_name: item.display_name
+          }))
+          setSearchResults(formattedResults)
           setError(null)
         } else {
           setSearchResults([])
@@ -80,7 +93,8 @@ export default function Map({
     }
 
     if (searchQuery.length >= 2) {
-      const debounceTimer = setTimeout(searchLocation, 300)
+      // Increased debounce for Nominatim API
+      const debounceTimer = setTimeout(searchLocation, 1000)
       return () => clearTimeout(debounceTimer)
     } else {
       setSearchResults([])
@@ -90,7 +104,6 @@ export default function Map({
   // Handle input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    console.log('Input changed:', value)
     onSearchQueryChange?.(value)
   }
 
@@ -98,10 +111,7 @@ export default function Map({
     if (!map.current) return
 
     const [lng, lat] = result.center
-    map.current.flyTo({
-      center: [lng, lat],
-      zoom: 14
-    })
+    map.current.flyTo([lat, lng], 14)
 
     onSearchSelect?.(result)
     setSearchResults([])
@@ -147,43 +157,23 @@ export default function Map({
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
-    const mapInstance = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [2.3522, 48.8566],
-      zoom: 13,
-    })
+    const mapInstance = L.map(mapContainer.current).setView([48.8566, 2.3522], 13)
 
-    mapInstance.on('load', () => {
-      mapInstance.addSource('route', {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [],
-          },
-        },
-      })
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(mapInstance)
 
-      mapInstance.addLayer({
-        id: 'route',
-        type: 'line',
-        source: 'route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': '#ff4400',
-          'line-width': 3,
-        },
-      })
+    routeLayer.current = L.polyline([], {
+      color: '#ff4400',
+      weight: 3,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(mapInstance)
 
-      map.current = mapInstance
-      setMapLoaded(true)
-    })
+    markersLayer.current = L.layerGroup().addTo(mapInstance)
+
+    map.current = mapInstance
+    setMapLoaded(true)
 
     return () => {
       mapInstance.remove()
@@ -196,12 +186,12 @@ export default function Map({
   useEffect(() => {
     if (!map.current || !mapLoaded) return
 
-    const handleClick = async (e: mapboxgl.MapMouseEvent) => {
+    const handleClick = async (e: L.LeafletMouseEvent) => {
       // Clear search results when clicking on map
       setSearchResults([])
       onSearchQueryChange?.("")
 
-      const newCoord: Coordinate = [e.lngLat.lng, e.lngLat.lat]
+      const newCoord: Coordinate = [e.latlng.lng, e.latlng.lat]
       const newCoords = [...coordinates, newCoord]
       setCoordinates(newCoords)
       
@@ -209,20 +199,18 @@ export default function Map({
         const stats = await calculateRouteStats(newCoords)
         onRouteUpdate?.(newCoords, stats)
 
-        const source = map.current?.getSource('route') as mapboxgl.GeoJSONSource
-        source.setData({
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: newCoords,
-          },
-        })
+        if (routeLayer.current) {
+          routeLayer.current.setLatLngs(newCoords.map(coord => [coord[1], coord[0]]))
+        }
 
-        const marker = new mapboxgl.Marker({ color: '#ff4400' })
-          .setLngLat(newCoord)
-          .addTo(map.current!)
-        markersRef.current.push(marker)
+        if (markersLayer.current) {
+          L.circleMarker([e.latlng.lat, e.latlng.lng], {
+            radius: 4,
+            color: '#ff4400',
+            fillColor: '#ff4400',
+            fillOpacity: 1
+          }).addTo(markersLayer.current)
+        }
 
         // Show align button when we have at least 2 points
         if (newCoords.length >= 2) {
@@ -246,25 +234,21 @@ export default function Map({
 
   const resetPoints = () => {
     setCoordinates([])
-    markersRef.current.forEach(marker => marker.remove())
-    markersRef.current = []
-    setShowAlignButton(false)
     
-    const source = map.current?.getSource('route') as mapboxgl.GeoJSONSource
-    source.setData({
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: [],
-      },
-    })
+    if (markersLayer.current) {
+      markersLayer.current.clearLayers()
+    }
 
+    if (routeLayer.current) {
+      routeLayer.current.setLatLngs([])
+    }
+
+    setShowAlignButton(false)
     onRouteUpdate?.([], { distance: 0, duration: 0, elevationGain: 0 })
   }
 
   return (
-    <div className="relative">
+    <div className="relative z-0">
       <div className="relative mb-4">
         <div className="relative">
           <input
@@ -283,10 +267,10 @@ export default function Map({
         </div>
         {searchResults.length > 0 && (
           <ul className="absolute z-10 w-full bg-white border rounded-lg mt-1 max-h-60 overflow-y-auto shadow-lg">
-            {searchResults.map((result) => (
+            {searchResults.map((result, index) => (
               <li
-                key={result.place_name}
-                className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                key={`${result.place_name}-${index}`}
+                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-black"
                 onClick={() => handleSearchSelect(result)}
               >
                 {result.place_name}
@@ -295,47 +279,44 @@ export default function Map({
           </ul>
         )}
       </div>
-      <div ref={mapContainer} className="h-[600px] w-full rounded-lg" />
+      <div ref={mapContainer} className="h-[600px] w-full rounded-lg z-0" />
       {showAlignButton && (
-        <div className="absolute bottom-4 left-4 flex gap-2">
+        <div className="absolute bottom-4 left-4 flex gap-2 z-[1000]">
           <button
             onClick={async () => {
               setIsAligning(true)
               try {
-                console.log('Align to Roads: Sending request with coordinates:', coordinates)
+                // Using OSRM for routing since mapbox was removed
+                const coordsString = coordinates.map(coord => `${coord[0]},${coord[1]}`).join(';')
                 const response = await fetch(
-                  `https://api.mapbox.com/directions/v5/mapbox/walking/${coordinates.map(coord => coord.join(',')).join(';')}?geometries=geojson&access_token=${mapboxgl.accessToken}`
+                  `https://router.project-osrm.org/route/v1/foot/${coordsString}?overview=full&geometries=geojson`
                 )
-                console.log('Align to Roads: Response status:', response.status)
+
                 if (!response.ok) throw new Error('Failed to align route')
                 
                 const data = await response.json()
-                console.log('Align to Roads: Response data:', data)
                 if (data.routes && data.routes[0]) {
                   const alignedCoords = data.routes[0].geometry.coordinates as Coordinate[]
-                  console.log('Aligned coordinates:', alignedCoords)
                   setCoordinates(alignedCoords)
                   
                   // Update the route line
-                  const source = map.current?.getSource('route') as mapboxgl.GeoJSONSource
-                  console.log('Updating route source with aligned coordinates')
-                  source.setData({
-                    type: 'Feature',
-                    properties: {},
-                    geometry: {
-                      type: 'LineString',
-                      coordinates: alignedCoords,
-                    },
-                  })
+                  if (routeLayer.current) {
+                    routeLayer.current.setLatLngs(alignedCoords.map(coord => [coord[1], coord[0]]))
+                  }
                   
-                  // Update markers
-                  console.log('Removing old markers and adding new markers for aligned coordinates')
-                  markersRef.current.forEach(marker => marker.remove())
-                  markersRef.current = alignedCoords.map(coord => 
-                    new mapboxgl.Marker({ color: '#ff4400' })
-                      .setLngLat(coord)
-                      .addTo(map.current!)
-                  )
+                  // Update markers (only first and last, or maybe we don't need markers for the whole path)
+                  if (markersLayer.current) {
+                    markersLayer.current.clearLayers()
+                    alignedCoords.forEach(coord => {
+                       L.circleMarker([coord[1], coord[0]], {
+                        radius: 2,
+                        color: '#ff4400',
+                        fillColor: '#ff4400',
+                        fillOpacity: 0.5,
+                        stroke: false
+                      }).addTo(markersLayer.current!)
+                    })
+                  }
                   
                   // Update stats
                   const stats = await calculateRouteStats(alignedCoords)
@@ -363,7 +344,7 @@ export default function Map({
         </div>
       )}
       {error && (
-        <div className="absolute bottom-20 left-4 right-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+        <div className="absolute bottom-20 left-4 right-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg z-[1000]">
           {error}
         </div>
       )}
