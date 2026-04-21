@@ -1,25 +1,6 @@
 globalThis.__BUILD_MANIFEST = {
   "pages": {
-    "/_app": [
-      "static/chunks/[root-of-the-server]__e2c08166._.js",
-      "static/chunks/node_modules_react_b2385d85._.js",
-      "static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js",
-      "static/chunks/node_modules_react-dom_f14d0471._.js",
-      "static/chunks/node_modules_3bfdc6a4._.js",
-      "static/chunks/[root-of-the-server]__49fd8634._.js",
-      "static/chunks/pages__app_5771e187._.js",
-      "static/chunks/pages__app_52204959._.js"
-    ],
-    "/_error": [
-      "static/chunks/[root-of-the-server]__8df7605f._.js",
-      "static/chunks/node_modules_react_b2385d85._.js",
-      "static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js",
-      "static/chunks/node_modules_react-dom_f14d0471._.js",
-      "static/chunks/node_modules_3bfdc6a4._.js",
-      "static/chunks/[root-of-the-server]__923cb372._.js",
-      "static/chunks/pages__error_5771e187._.js",
-      "static/chunks/pages__error_c260eb72._.js"
-    ]
+    "/_app": []
   },
   "devFiles": [],
   "ampDevFiles": [],
@@ -28,13 +9,15 @@ globalThis.__BUILD_MANIFEST = {
   ],
   "lowPriorityFiles": [],
   "rootMainFiles": [
-    "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_fd44f5a4._.js",
-    "static/chunks/node_modules_next_dist_compiled_2ce9398a._.js",
-    "static/chunks/node_modules_next_dist_client_8f19e6fb._.js",
-    "static/chunks/node_modules_next_dist_2ecbf5fa._.js",
-    "static/chunks/node_modules_@swc_helpers_cjs_00636ac3._.js",
-    "static/chunks/_e69f0d32._.js",
-    "static/chunks/_93808211._.js"
+    "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_57d40746._.js",
+    "static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js",
+    "static/chunks/node_modules_next_dist_compiled_next-devtools_index_a9cb0712.js",
+    "static/chunks/node_modules_next_dist_compiled_5150ccfd._.js",
+    "static/chunks/node_modules_next_dist_client_cf1d9188._.js",
+    "static/chunks/node_modules_next_dist_b0daae9a._.js",
+    "static/chunks/node_modules_@swc_helpers_cjs_b3dc30d6._.js",
+    "static/chunks/_a0ff3932._.js",
+    "static/chunks/turbopack-_cdba956c._.js"
   ],
   "ampFirstPages": []
 };
